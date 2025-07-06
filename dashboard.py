@@ -4,7 +4,6 @@ import yfinance as yf
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 
-# ========== STRATEGY FUNCTION ==========
 def apply_strategies(df):
     if df.empty or len(df) < 20:
         return ["⚠️ Not enough data"]
@@ -31,7 +30,7 @@ def apply_strategies(df):
     if df['EMA5'].iloc[-2] < df['EMA20'].iloc[-2] and df['EMA5'].iloc[-1] > df['EMA20'].iloc[-1]:
         signals.append("EMA Crossover")
 
-    # Strategy 3: ORB
+    # Strategy 3: ORB (Opening Range Breakout)
     opening_range = df.between_time("09:15", "09:30")
     if not opening_range.empty:
         high = opening_range['High'].max()
@@ -69,7 +68,7 @@ def apply_strategies(df):
 st.set_page_config(page_title="📱 Intraday Screener", layout="centered")
 st.markdown("<h2 style='text-align: center;'>📈 Intraday Screener (Mobile View)</h2>", unsafe_allow_html=True)
 
-# User input: Search Stocks
+# Input: Stock Symbols
 stock_input = st.text_input("🔍 Enter Stock Symbols (comma separated)", value="RELIANCE.NS, INFY.NS")
 stocks = [s.strip().upper() for s in stock_input.split(",") if s.strip()]
 
@@ -78,7 +77,7 @@ lookback = st.slider("🕰️ Lookback Days", 1, 5, 3)
 
 results = []
 
-# ========== SCANNING ==========
+# ========== STRATEGY SCAN ==========
 with st.spinner("📡 Scanning the market..."):
     for stock in stocks:
         try:
@@ -98,3 +97,4 @@ if not result_df.empty:
     st.success("✅ Scan Complete")
 else:
     st.warning("⚠️ No signals found.")
+
