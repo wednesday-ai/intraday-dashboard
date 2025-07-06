@@ -4,16 +4,21 @@ import yfinance as yf
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 
+# ========== STRATEGY FUNCTION ==========
 def apply_strategies(df):
-    # Safety checks
-    if df.empty or len(df) < 20 or df.isnull().any().any():
-        return ["⚠️ Data Invalid or Incomplete"]
+    if df.empty or len(df) < 20:
+        return ["⚠️ Not enough data"]
 
-    # Technical Indicators
-    df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
-    df['EMA5'] = EMAIndicator(df['Close'], window=5).ema_indicator()
-    df['EMA20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
-    df['VWAP'] = (df['Volume'] * (df['High'] + df['Low'] + df['Close']) / 3).cumsum() / df['Volume'].cumsum()
+    if 'Close' not in df or df['Close'].isnull().any() or df['Close'].ndim != 1:
+        return ["⚠️ Invalid Close price"]
+
+    try:
+        df['RSI'] = RSIIndicator(df['Close'], window=14).rsi()
+        df['EMA5'] = EMAIndicator(df['Close'], window=5).ema_indicator()
+        df['EMA20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
+        df['VWAP'] = (df['Volume'] * (df['High'] + df['Low'] + df['Close']) / 3).cumsum() / df['Volume'].cumsum()
+    except Exception as e:
+        return [f"⚠️ TA Error: {str(e)}"]
 
     latest = df.iloc[-1]
     signals = []
@@ -26,7 +31,7 @@ def apply_strategies(df):
     if df['EMA5'].iloc[-2] < df['EMA20'].iloc[-2] and df['EMA5'].iloc[-1] > df['EMA20'].iloc[-1]:
         signals.append("EMA Crossover")
 
-    # Strategy 3: ORB
+    # Strategy 3: Opening Range Breakout (ORB)
     opening_range = df.between_time("09:15", "09:30")
     if not opening_range.empty:
         high = opening_range['High'].max()
@@ -50,7 +55,7 @@ def apply_strategies(df):
     if df['Volume'].iloc[-1] > 2 * avg_vol:
         signals.append("Volume Breakout")
 
-    # Strategy 6: Reversal at Support/Resistance
+    # Strategy 6: Reversal @ Support/Resistance
     support = df['Low'].rolling(window=20).min().iloc[-1]
     resistance = df['High'].rolling(window=20).max().iloc[-1]
     if abs(latest['Close'] - support) <= 0.5:
@@ -60,31 +65,39 @@ def apply_strategies(df):
 
     return signals if signals else ["No setup"]
 
-# Streamlit UI
+# ========== STREAMLIT UI ==========
 st.set_page_config(page_title="📱 Intraday Screener", layout="centered")
 st.markdown("<h2 style='text-align: center;'>📈 Intraday Screener (Mobile View)</h2>", unsafe_allow_html=True)
 
-# User input
-stocks = st.multiselect("📌 Select Stocks", ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "TATAMOTORS.NS", "INFY.NS", "ICICIBANK.NS"], default=["RELIANCE.NS"])
+stocks = st.multiselect(
+    "📌 Select Stocks",
+    ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "TATAMOTORS.NS", "INFY.NS", "ICICIBANK.NS"],
+    default=["RELIANCE.NS"]
+)
 interval = st.selectbox("⏱️ Time Interval", ["5m", "15m"], index=0)
 lookback = st.slider("🕰️ Lookback Days", 1, 5, 3)
 
 results = []
 
+# ========== SCANNING ==========
 with st.spinner("📡 Scanning the market..."):
     for stock in stocks:
-        df = yf.download(stock, period=f"{lookback}d", interval=interval, progress=False)
-        if df.empty or len(df) < 20:
-            continue
-        df.dropna(inplace=True)
-        signals = apply_strategies(df)
-        results.append({"Stock": stock, "Signals": ", ".join(signals)})
+        try:
+            df = yf.download(stock, period=f"{lookback}d", interval=interval, progress=False)
+            df.dropna(inplace=True)
+            df.index = pd.to_datetime(df.index)
+            df = df.between_time("09:15", "15:30")
+            signals = apply_strategies(df)
+            results.append({"Stock": stock, "Signals": ", ".join(signals)})
+        except Exception as e:
+            results.append({"Stock": stock, "Signals": f"⚠️ Error: {str(e)}"})
 
-# Display results
+# ========== DISPLAY ==========
 result_df = pd.DataFrame(results)
 if not result_df.empty:
     st.dataframe(result_df, use_container_width=True)
     st.success("✅ Scan Complete")
 else:
     st.warning("⚠️ No signals found.")
+
 
