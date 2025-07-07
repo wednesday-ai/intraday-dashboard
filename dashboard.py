@@ -5,54 +5,54 @@ import ta
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Intraday Screener", layout="wide")
-
 st.title("📱 Intraday Screener (Mobile View)")
 
-# --- Input Section ---
 symbols_input = st.text_input("🔍 Enter Stock Symbols (comma separated)", "RELIANCE.NS, INFY.NS")
 interval = st.selectbox("⏱ Time Interval", ["5m", "15m", "30m"], index=0)
 lookback_days = st.slider("🙈 Lookback Days", 1, 10, 3)
 
-symbols = [symbol.strip().upper() for symbol in symbols_input.split(',') if symbol.strip()]
+symbols = [s.strip().upper() for s in symbols_input.split(',') if s.strip()]
 
-# --- Signal Logic ---
 def generate_signals(df):
     try:
+        df = df.copy()
+        
+        # Calculate indicators
         df['RSI'] = ta.momentum.RSIIndicator(close=df['Close']).rsi()
         macd = ta.trend.MACD(close=df['Close'])
         df['MACD'] = macd.macd()
-        df['Signal'] = macd.macd_signal()
-
+        df['MACD_SIGNAL'] = macd.macd_signal()
         vwap = ta.volume.VolumeWeightedAveragePrice(
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            volume=df['Volume']
+            high=df['High'], low=df['Low'], close=df['Close'], volume=df['Volume']
         )
         df['VWAP'] = vwap.vwap
 
-        latest = df.dropna().iloc[-1]
+        # Drop all rows with NaNs
+        df = df.dropna()
 
-        # Signal logic on latest candle
-        if (
-            latest['RSI'] > 55 and
-            latest['MACD'] > latest['Signal'] and
-            latest['Close'] > latest['VWAP']
-        ):
-            return "📈 BUY Signal"
-        elif (
-            latest['RSI'] < 45 and
-            latest['MACD'] < latest['Signal'] and
-            latest['Close'] < latest['VWAP']
-        ):
-            return "📉 SELL Signal"
+        if len(df) == 0:
+            return "⚠️ Not enough data after indicators"
+
+        # Use only the latest row
+        latest = df.iloc[-1]
+
+        rsi = latest['RSI']
+        macd_line = latest['MACD']
+        macd_signal = latest['MACD_SIGNAL']
+        close = latest['Close']
+        vwap_val = latest['VWAP']
+
+        if rsi > 55 and macd_line > macd_signal and close > vwap_val:
+            return "📈 BUY"
+        elif rsi < 45 and macd_line < macd_signal and close < vwap_val:
+            return "📉 SELL"
         else:
-            return "🔍 No Clear Signal"
+            return "🔍 Neutral"
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"⚠️ {str(e)}"
 
-# --- Scan Logic ---
 if st.button("▶️ Scan"):
+    st.write("Scanning stocks...")
     results = []
     end = datetime.now()
     start = end - timedelta(days=lookback_days)
@@ -61,15 +61,14 @@ if st.button("▶️ Scan"):
         try:
             data = yf.download(symbol, start=start, end=end, interval=interval)
             if data.empty:
-                results.append((symbol, "⚠️ No Data"))
+                results.append((symbol, "⚠️ No data"))
                 continue
-
             signal = generate_signals(data)
             results.append((symbol, signal))
         except Exception as e:
-            results.append((symbol, f"⚠️ Error: {str(e)}"))
+            results.append((symbol, f"⚠️ {str(e)}"))
 
-    # --- Display Results ---
-    df_result = pd.DataFrame(results, columns=["Stock", "Signals"])
-    st.dataframe(df_result, use_container_width=True)
+    result_df = pd.DataFrame(results, columns=["Stock", "Signals"])
+    st.dataframe(result_df, use_container_width=True)
     st.success("✅ Scan Complete")
+
