@@ -1,41 +1,38 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import ta
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+from ta.volume import VolumeWeightedAveragePrice
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Intraday Screener", layout="wide")
 st.title("📱 Intraday Screener (Mobile View)")
 
-# --- Input
+# Input UI
 symbols_input = st.text_input("🔍 Enter Stock Symbols (comma separated)", "RELIANCE.NS, INFY.NS")
 interval = st.selectbox("⏱ Time Interval", ["5m", "15m", "30m"], index=0)
 lookback_days = st.slider("🙈 Lookback Days", 1, 10, 3)
-
 symbols = [s.strip().upper() for s in symbols_input.split(',') if s.strip()]
 
-# --- Signal Generator
+# Signal generator
 def generate_signals(df):
     try:
         df = df.copy()
 
-        # Make sure close is a 1D Series
-        close = df["Close"]
-        high = df["High"]
-        low = df["Low"]
-        volume = df["Volume"]
+        # Ensure all columns are 1D Series
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        volume = df['Volume']
 
-        # Technical Indicators
-        df['RSI'] = ta.momentum.RSIIndicator(close=close).rsi()
-
-        macd_obj = ta.trend.MACD(close=close)
-        df['MACD'] = macd_obj.macd()
-        df['MACD_SIGNAL'] = macd_obj.macd_signal()
-
-        vwap_obj = ta.volume.VolumeWeightedAveragePrice(
-            high=high, low=low, close=close, volume=volume
-        )
-        df['VWAP'] = vwap_obj.vwap
+        # Indicators
+        df['RSI'] = RSIIndicator(close=close).rsi()
+        macd = MACD(close=close)
+        df['MACD'] = macd.macd()
+        df['MACD_SIGNAL'] = macd.macd_signal()
+        vwap = VolumeWeightedAveragePrice(high=high, low=low, close=close, volume=volume)
+        df['VWAP'] = vwap.vwap
 
         df.dropna(inplace=True)
 
@@ -60,9 +57,9 @@ def generate_signals(df):
             return "⏸️ Neutral"
 
     except Exception as e:
-        return f"⚠️ {str(e)}"
+        return f"❌ Error: {str(e)}"
 
-# --- Scanning
+# Button logic
 if st.button("▶️ Scan"):
     results = []
     end = datetime.now()
@@ -70,18 +67,18 @@ if st.button("▶️ Scan"):
 
     for symbol in symbols:
         try:
-            data = yf.download(symbol, start=start, end=end, interval=interval)
-            if data.empty:
+            df = yf.download(symbol, start=start, end=end, interval=interval)
+            if df.empty:
                 results.append((symbol, "⚠️ No data"))
                 continue
 
-            signal = generate_signals(data)
+            signal = generate_signals(df)
             results.append((symbol, signal))
         except Exception as e:
-            results.append((symbol, f"⚠️ {str(e)}"))
+            results.append((symbol, f"❌ Error: {str(e)}"))
 
-    df_results = pd.DataFrame(results, columns=["Stock", "Signals"])
-    st.dataframe(df_results, use_container_width=True)
+    st.dataframe(pd.DataFrame(results, columns=["Stock", "Signals"]), use_container_width=True)
     st.success("✅ Scan Complete")
+
 
 
